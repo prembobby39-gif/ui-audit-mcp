@@ -1,12 +1,30 @@
 # ui-audit-mcp
 
-**AI-powered UI review tool for Claude Code.** Captures screenshots, runs accessibility audits, measures performance, and analyzes frontend code — giving Claude everything it needs to act as a world-class frontend expert and review your UI.
+**Turns Claude Code into a frontend expert that reviews and fixes your UI automatically.**
 
 <p align="center">
   <img src="https://img.shields.io/npm/v/ui-audit-mcp" alt="npm version" />
   <img src="https://img.shields.io/npm/l/ui-audit-mcp" alt="license" />
   <img src="https://img.shields.io/badge/MCP-compatible-blueviolet" alt="MCP compatible" />
+  <img src="https://img.shields.io/badge/cost-free%20(Pro%20plan)-brightgreen" alt="free for Pro plan" />
 </p>
+
+One command — *"review my UI at localhost:3000"* — and it:
+
+1. **Sees your app** — captures a real screenshot via Puppeteer
+2. **Audits accessibility** — runs axe-core for WCAG 2.1 violations
+3. **Measures performance** — captures Core Web Vitals (FCP, LCP, CLS, TBT)
+4. **Scans your code** — checks for 15+ anti-patterns across accessibility, design, and code quality
+5. **Generates an expert review** — Claude acts as a senior frontend engineer with a baked-in review methodology covering visual design, UX, accessibility, performance, and creative improvements
+6. **Implements the fixes** — edits your actual code files, starting from critical issues down
+
+**Free for all Claude Code users (Pro plan and above). No API keys. No extra costs. Just install and go.**
+
+```bash
+claude mcp add ui-audit -- npx -y ui-audit-mcp
+```
+
+---
 
 ## The Problem
 
@@ -19,22 +37,6 @@ You're building a frontend. You want expert-level feedback on your UI — visual
 5. Then figure out the fixes
 
 **That's 5 steps too many.**
-
-## The Solution
-
-Install this MCP server, point it at your running app, and tell Claude:
-
-> "Review the UI at localhost:3000"
-
-Claude will automatically:
-1. 📸 **Capture screenshots** of your actual rendered UI
-2. ♿ **Run accessibility audits** (WCAG 2.1 via axe-core)
-3. ⚡ **Measure performance** (Core Web Vitals)
-4. 🔍 **Analyze your source code** for anti-patterns
-5. 📋 **Generate an expert review** with specific, actionable fixes
-6. 🔧 **Implement the fixes** right there in your codebase
-
-**One command. Full expert review. Automatic fixes.**
 
 ## Quick Start
 
