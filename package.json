@@ -1,6 +1,6 @@
 {
   "name": "uimax-mcp",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "mcpName": "io.github.prembobby39-gif/uimax-mcp",
   "description": "UIMax MCP — Turns Claude Code into a frontend expert that reviews and fixes your UI automatically. Free for Pro plan users.",
   "type": "module",

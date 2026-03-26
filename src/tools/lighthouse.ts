@@ -250,6 +250,20 @@ export async function runLighthouse(
   };
 }
 
+/**
+ * Run Lighthouse and return the FULL raw JSON result (LHR).
+ *
+ * Unlike `runLighthouse`, which extracts only key scores and audits,
+ * this returns the entire Lighthouse result object for deep analysis
+ * by the lighthouse-deep extraction functions.
+ */
+export async function runLighthouseDeep(
+  url: string,
+  options?: { readonly chromePath?: string }
+): Promise<Record<string, unknown>> {
+  return runLighthouseCli(url, options?.chromePath);
+}
+
 // ── Report Formatting ──────────────────────────────────────────────
 
 function scoreEmoji(score: number | null): string {

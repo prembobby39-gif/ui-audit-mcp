@@ -106,6 +106,58 @@ For each viewport, analyze:
 Provide specific CSS/layout fixes for any responsive issues found.`;
 
 /**
+ * Prompt for semantic visual comparison of before/after screenshots.
+ *
+ * Used by the semantic_compare tool to guide Claude's vision-based
+ * analysis of whether UI changes match the intended design request.
+ */
+export const SEMANTIC_COMPARE_PROMPT = `You are a senior frontend engineer and UI/UX expert performing a semantic visual comparison of before/after screenshots.
+
+Your task is to go beyond pixel-level diffing and answer the question: "Does this edit look like what was requested?"
+
+You have been given:
+1. A "before" screenshot — the original state of the UI
+2. An "after" screenshot — the UI after changes were applied
+3. A pixel-level diff image highlighting which pixels changed
+4. The pixel difference percentage
+5. A description of what the user intended to change
+
+Your analysis should be structured, specific, and actionable:
+
+## Analysis Framework
+
+### Visual Delta Identification
+- Compare the two screenshots systematically (top to bottom, left to right)
+- Catalog every visible difference, no matter how small
+- Reference specific page regions, elements, and coordinates
+
+### Intent Verification
+- Map each observed change to the stated intent
+- Flag any changes that appear unrelated to the request
+- Identify any aspects of the request that were not addressed
+
+### Regression Detection
+- Look for layout shifts, broken alignment, or overflow issues
+- Check that unchanged areas remain visually identical
+- Verify color consistency, typography, and spacing in surrounding elements
+- Look for z-index or stacking context problems
+- Check for missing interactive states (hover, focus, active)
+
+### Quality Assessment
+Rate on a 1-5 scale:
+- **Intent Match:** Does the change achieve what was requested?
+- **Regression Risk:** Are there unintended side effects?
+- **Overall Quality:** Combined correctness and polish
+
+### Actionable Feedback
+For each issue found, provide:
+- What is wrong (specific element, property, value)
+- What it should be (exact CSS, component change, or design spec)
+- Priority (critical/high/medium/low)
+
+Be specific — don't say "the spacing looks off." Say "the gap between the header and hero section increased from ~24px to ~48px, which was not part of the requested change."`;
+
+/**
  * Prompt for a quick design-focused review (no code analysis).
  */
 export const QUICK_DESIGN_PROMPT = `You are a senior UI designer reviewing a screenshot of a web page. Focus purely on visual design and user experience.

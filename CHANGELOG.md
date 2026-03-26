@@ -5,6 +5,20 @@ All notable changes to UIMax MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-03-26
+
+### Added
+- **Deep Lighthouse tools** — 5 new dedicated tools: `pwa_audit`, `security_audit`, `unused_code`, `lcp_optimization`, `resource_analysis`
+- **Browser interaction** — 7 new tools: `navigate`, `click`, `type_text`, `select_option`, `scroll`, `wait_for`, `get_element` with persistent page state and post-action screenshots
+- **Console/network capture** — 3 new tools: `capture_console`, `capture_network`, `capture_errors` for debugging page load behavior
+- **Semantic visual compare** — `semantic_compare` tool with AI-powered methodology for intent-based before/after analysis
+- `semantic-compare` prompt for structured visual comparison analysis
+- 122 new tests across 4 new test files
+
+### Changed
+- Tool count: 16 → 32
+- Test count: 301 → 423
+
 ## [0.5.0] - 2026-03-26
 
 ### Added

@@ -7,7 +7,7 @@ import { captureScreenshot, captureResponsiveScreenshots } from "./tools/screens
 import { runAccessibilityAudit, formatAccessibilityReport } from "./tools/accessibility.js";
 import { measurePerformance, formatPerformanceReport } from "./tools/performance.js";
 import { analyzeCode, formatCodeAnalysisReport } from "./tools/code-analysis.js";
-import { runLighthouse, formatLighthouseReport } from "./tools/lighthouse.js";
+import { runLighthouse, runLighthouseDeep, formatLighthouseReport } from "./tools/lighthouse.js";
 import { runFullReview, formatFullReviewReport } from "./tools/full-review.js";
 import { generateHtmlReport } from "./tools/html-report.js";
 import { checkDarkMode } from "./tools/dark-mode.js";
@@ -30,7 +30,40 @@ import {
   UI_REVIEW_PROMPT,
   RESPONSIVE_REVIEW_PROMPT,
   QUICK_DESIGN_PROMPT,
+  SEMANTIC_COMPARE_PROMPT,
 } from "./prompts/review.js";
+import {
+  captureSemanticComparison,
+} from "./tools/semantic-compare.js";
+import {
+  captureConsoleLogs,
+  captureNetworkRequests,
+  capturePageErrors,
+  formatConsoleReport,
+  formatNetworkReport,
+  formatErrorReport,
+} from "./tools/browser-capture.js";
+import {
+  extractPwaReadiness,
+  extractSecurityAudit,
+  extractUnusedCode,
+  extractLcpOptimization,
+  extractResourceAnalysis,
+  formatPwaReport,
+  formatSecurityReport,
+  formatUnusedCodeReport,
+  formatLcpReport,
+  formatResourceReport,
+} from "./tools/lighthouse-deep.js";
+import {
+  navigateTo,
+  clickElement,
+  typeIntoElement,
+  selectOption,
+  scrollPage,
+  waitForElement,
+  getElementInfo,
+} from "./tools/interact.js";
 
 // ── Baseline Data Collection ───────────────────────────────────────
 
@@ -83,7 +116,7 @@ async function runLighthouseSafe(
 export function createServer(): McpServer {
   const server = new McpServer({
     name: "uimax",
-    version: "0.5.0",
+    version: "0.6.0",
     // 0.2.0: Dark mode detection, 25+ code rules, framework detection fix
   });
 
@@ -568,6 +601,106 @@ This tool is FREE — runs entirely within Claude Code.`,
   );
 
   server.tool(
+    "semantic_compare",
+    `AI-powered visual comparison. Captures before/after screenshots and provides a structured methodology for Claude to semantically evaluate whether UI changes match the intended design request. Goes beyond pixel diffing to understand intent.
+
+Returns both screenshots as images, a pixel-level diff image, the difference percentage, and a detailed semantic methodology prompt. Claude's vision analyzes the screenshots to determine if the changes match what was requested, checking for regressions and unintended side effects.
+
+This tool is FREE — it runs entirely within Claude Code using the user's existing plan. No API keys needed.`,
+    {
+      urlBefore: z.string().url().describe("URL of the 'before' state (e.g., http://localhost:3000)"),
+      urlAfter: z.string().url().describe("URL of the 'after' state (e.g., http://localhost:3001)"),
+      changeDescription: z.string().describe("What was the intended change? (e.g., 'Changed the hero section background to a gradient and increased heading font size')"),
+      width: z.number().optional().default(1440).describe("Viewport width in pixels"),
+      height: z.number().optional().default(900).describe("Viewport height in pixels"),
+    },
+    async ({ urlBefore, urlAfter, changeDescription, width, height }) => {
+      try {
+        const result = await captureSemanticComparison(
+          urlBefore,
+          urlAfter,
+          changeDescription,
+          {
+            viewport: {
+              width: width ?? 1440,
+              height: height ?? 900,
+            },
+          },
+        );
+
+        const diffSummary = result.differencePercent === 0
+          ? "The two pages are visually IDENTICAL (0% pixel difference). The requested change may not have been applied."
+          : `Visual difference detected: ${result.differencePercent}% of pixels differ (${result.pixelsChanged.toLocaleString()} pixels changed)`;
+
+        const headerText = [
+          `# Semantic Visual Comparison`,
+          ``,
+          `**Intended Change:** ${changeDescription}`,
+          `**URL Before:** ${result.urlBefore}`,
+          `**URL After:** ${result.urlAfter}`,
+          `**Viewport:** ${result.beforeScreenshot.width}x${result.beforeScreenshot.height}`,
+          `**Pixel Difference:** ${result.differencePercent}%`,
+          `**Pixels Changed:** ${result.pixelsChanged.toLocaleString()} / ${(result.dimensions.width * result.dimensions.height).toLocaleString()}`,
+          `**Result:** ${diffSummary}`,
+          ``,
+          `## Before Screenshot:`,
+        ].join("\n");
+
+        const content: Array<
+          | { type: "text"; text: string }
+          | { type: "image"; data: string; mimeType: "image/png" }
+        > = [
+          { type: "text" as const, text: headerText },
+          {
+            type: "image" as const,
+            data: result.beforeScreenshot.base64,
+            mimeType: result.beforeScreenshot.mimeType,
+          },
+          { type: "text" as const, text: `\n## After Screenshot:` },
+          {
+            type: "image" as const,
+            data: result.afterScreenshot.base64,
+            mimeType: result.afterScreenshot.mimeType,
+          },
+        ];
+
+        if (result.differencePercent > 0) {
+          content.push(
+            { type: "text" as const, text: `\n## Diff Image (changed pixels in red):` },
+            {
+              type: "image" as const,
+              data: result.diffImage,
+              mimeType: "image/png" as const,
+            },
+          );
+        }
+
+        content.push({
+          type: "text" as const,
+          text: [
+            ``,
+            `---`,
+            ``,
+            result.methodology,
+            ``,
+            `---`,
+            ``,
+            `Now analyze the before and after screenshots above using this methodology. Determine whether the change "${changeDescription}" was implemented correctly, identify any regressions, and provide specific feedback.`,
+          ].join("\n"),
+        });
+
+        return { content };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: "text" as const, text: `Semantic comparison failed: ${message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  server.tool(
     "accessibility_audit",
     "Run an automated accessibility audit using axe-core. Checks for WCAG 2.1 Level A and AA violations, reporting issues by severity with specific fix instructions.",
     {
@@ -651,6 +784,163 @@ This tool is FREE — runs entirely within Claude Code.`,
         const message = error instanceof Error ? error.message : String(error);
         return {
           content: [{ type: "text" as const, text: `Lighthouse audit failed: ${message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // ── Deep Lighthouse Analysis Tools ──────────────────────────────
+
+  server.tool(
+    "pwa_audit",
+    "Check Progressive Web App readiness: installable manifest, service worker, HTTPS, offline capability, and more. Runs a full Lighthouse audit under the hood and extracts all PWA-related audit results with pass/fail for each requirement.",
+    {
+      url: z.string().url().describe("URL of the page to check for PWA readiness (e.g., http://localhost:3000)"),
+    },
+    async ({ url }) => {
+      try {
+        const lhr = await runLighthouseDeep(url);
+        const result = extractPwaReadiness(lhr);
+        const report = formatPwaReport(result);
+
+        return {
+          content: [
+            { type: "text" as const, text: report },
+            {
+              type: "text" as const,
+              text: `\n\n<raw_data>\n${JSON.stringify(result, null, 2)}\n</raw_data>`,
+            },
+          ],
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: "text" as const, text: `PWA audit failed: ${message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "security_audit",
+    "Check security posture via Lighthouse: HTTPS usage, mixed content, CSP headers, vulnerable JavaScript libraries, external links without noopener, and more. Returns pass/fail findings with severity levels.",
+    {
+      url: z.string().url().describe("URL of the page to audit for security (e.g., http://localhost:3000)"),
+    },
+    async ({ url }) => {
+      try {
+        const lhr = await runLighthouseDeep(url);
+        const result = extractSecurityAudit(lhr);
+        const report = formatSecurityReport(result);
+
+        return {
+          content: [
+            { type: "text" as const, text: report },
+            {
+              type: "text" as const,
+              text: `\n\n<raw_data>\n${JSON.stringify(result, null, 2)}\n</raw_data>`,
+            },
+          ],
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: "text" as const, text: `Security audit failed: ${message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "unused_code",
+    "Find unused JavaScript and CSS on a page. Runs Lighthouse and extracts the unused-javascript and unused-css-rules audits, showing each resource with total bytes, unused bytes, and potential savings. Great for reducing bundle size.",
+    {
+      url: z.string().url().describe("URL of the page to analyze for unused code (e.g., http://localhost:3000)"),
+    },
+    async ({ url }) => {
+      try {
+        const lhr = await runLighthouseDeep(url);
+        const result = extractUnusedCode(lhr);
+        const report = formatUnusedCodeReport(result);
+
+        return {
+          content: [
+            { type: "text" as const, text: report },
+            {
+              type: "text" as const,
+              text: `\n\n<raw_data>\n${JSON.stringify(result, null, 2)}\n</raw_data>`,
+            },
+          ],
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: "text" as const, text: `Unused code analysis failed: ${message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "lcp_optimization",
+    "Deep Largest Contentful Paint (LCP) analysis. Identifies the LCP element, measures TTFB, resource load time, and render delay. Provides specific optimization suggestions to improve LCP below the 2.5s threshold.",
+    {
+      url: z.string().url().describe("URL of the page to analyze LCP (e.g., http://localhost:3000)"),
+    },
+    async ({ url }) => {
+      try {
+        const lhr = await runLighthouseDeep(url);
+        const result = extractLcpOptimization(lhr);
+        const report = formatLcpReport(result);
+
+        return {
+          content: [
+            { type: "text" as const, text: report },
+            {
+              type: "text" as const,
+              text: `\n\n<raw_data>\n${JSON.stringify(result, null, 2)}\n</raw_data>`,
+            },
+          ],
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: "text" as const, text: `LCP optimization analysis failed: ${message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "resource_analysis",
+    "Full resource breakdown of a page: total transfer size, breakdown by type (JS, CSS, images, fonts), number of requests, top 10 largest resources, and render-blocking resources. Helps identify what is making your page heavy.",
+    {
+      url: z.string().url().describe("URL of the page to analyze resources (e.g., http://localhost:3000)"),
+    },
+    async ({ url }) => {
+      try {
+        const lhr = await runLighthouseDeep(url);
+        const result = extractResourceAnalysis(lhr);
+        const report = formatResourceReport(result);
+
+        return {
+          content: [
+            { type: "text" as const, text: report },
+            {
+              type: "text" as const,
+              text: `\n\n<raw_data>\n${JSON.stringify(result, null, 2)}\n</raw_data>`,
+            },
+          ],
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: "text" as const, text: `Resource analysis failed: ${message}` }],
           isError: true,
         };
       }
@@ -926,6 +1216,410 @@ This tool is FREE — runs entirely within Claude Code.`,
     }
   );
 
+  // ── Browser Capture Tools ────────────────────────────────────
+
+  server.tool(
+    "capture_console",
+    `Capture all console messages (log, warn, error, info, debug) during page load. Navigates to the URL, listens for console output and uncaught exceptions, then returns structured results with message counts by level. Useful for debugging runtime issues, detecting warnings, and finding errors that only appear in the browser console.
+
+Note: Console messages may contain sensitive data (tokens, user info, etc.) — the output is returned unfiltered.
+
+This tool is FREE — runs entirely within Claude Code.`,
+    {
+      url: z.string().url().describe("URL of the page to capture console logs from (e.g., http://localhost:3000)"),
+      waitMs: z
+        .number()
+        .optional()
+        .default(3000)
+        .describe("Time in ms to wait after page load for additional console messages (default 3000)"),
+    },
+    async ({ url, waitMs }) => {
+      try {
+        const result = await captureConsoleLogs(url, { waitMs });
+        const report = formatConsoleReport(result);
+
+        return {
+          content: [
+            { type: "text" as const, text: report },
+            {
+              type: "text" as const,
+              text: `\n\n<raw_data>\n${JSON.stringify(result, null, 2)}\n</raw_data>`,
+            },
+          ],
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: "text" as const, text: `Console capture failed: ${message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "capture_network",
+    `Capture all network requests during page load with status codes, sizes, timing, and resource types. Provides a summary with total requests, failed requests, total transfer size, and breakdown by resource type. Useful for finding failed API calls, slow requests, large assets, and understanding page load behavior.
+
+This tool is FREE — runs entirely within Claude Code.`,
+    {
+      url: z.string().url().describe("URL of the page to capture network requests from (e.g., http://localhost:3000)"),
+      waitMs: z
+        .number()
+        .optional()
+        .default(3000)
+        .describe("Time in ms to wait after page load for additional network activity (default 3000)"),
+    },
+    async ({ url, waitMs }) => {
+      try {
+        const result = await captureNetworkRequests(url, { waitMs });
+        const report = formatNetworkReport(result);
+
+        return {
+          content: [
+            { type: "text" as const, text: report },
+            {
+              type: "text" as const,
+              text: `\n\n<raw_data>\n${JSON.stringify(result, null, 2)}\n</raw_data>`,
+            },
+          ],
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: "text" as const, text: `Network capture failed: ${message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "capture_errors",
+    `Capture JavaScript errors, uncaught exceptions, unhandled promise rejections, and failed resource loads (images, scripts, stylesheets, fonts) during page load. Returns structured error list with error kind, message, and source location. Useful for finding runtime JS errors and broken resources that affect user experience.
+
+This tool is FREE — runs entirely within Claude Code.`,
+    {
+      url: z.string().url().describe("URL of the page to capture errors from (e.g., http://localhost:3000)"),
+    },
+    async ({ url }) => {
+      try {
+        const result = await capturePageErrors(url);
+        const report = formatErrorReport(result);
+
+        return {
+          content: [
+            { type: "text" as const, text: report },
+            {
+              type: "text" as const,
+              text: `\n\n<raw_data>\n${JSON.stringify(result, null, 2)}\n</raw_data>`,
+            },
+          ],
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: "text" as const, text: `Error capture failed: ${message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // ── Browser Interaction Tools ────────────────────────────────
+
+  server.tool(
+    "navigate",
+    `Navigate to a URL and return page info. Waits for network idle before returning. Returns the final URL, page title, HTTP status code, and a screenshot so you can visually verify the page loaded correctly.
+
+Use this when you need to open a page before performing interactions, or to verify a page loads successfully.`,
+    {
+      url: z.string().url().describe("URL to navigate to (e.g., http://localhost:3000)"),
+    },
+    async ({ url }) => {
+      try {
+        const result = await navigateTo(url);
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: [
+                `# Navigation Complete`,
+                ``,
+                `**URL:** ${result.url}`,
+                `**Title:** ${result.title}`,
+                `**Status:** ${result.status ?? "unknown"}`,
+                ``,
+                `Screenshot after navigation:`,
+              ].join("\n"),
+            },
+            {
+              type: "image" as const,
+              data: result.screenshot,
+              mimeType: "image/png" as const,
+            },
+          ],
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: "text" as const, text: `Navigation failed: ${message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "click",
+    `Click an element by CSS selector. Returns a screenshot after the click so you can visually verify the result. Supports standard CSS selectors. If the page hasn't been navigated yet, provide a URL to navigate first.`,
+    {
+      selector: z.string().describe("CSS selector of the element to click (e.g., 'button.submit', '#login-btn')"),
+      url: z.string().url().optional().describe("Optional URL to navigate to before clicking"),
+      waitAfter: z.number().optional().describe("Optional milliseconds to wait after clicking (for animations/transitions)"),
+    },
+    async ({ selector, url, waitAfter }) => {
+      try {
+        const result = await clickElement(selector, { url, waitAfter });
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Clicked \`${result.selector}\`. Screenshot after click:`,
+            },
+            {
+              type: "image" as const,
+              data: result.screenshot,
+              mimeType: "image/png" as const,
+            },
+          ],
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: "text" as const, text: `Click failed: ${message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "type_text",
+    `Type text into an input field or textarea by CSS selector. Returns a screenshot after typing so you can visually verify the result. Options to clear existing text first and press Enter after typing.`,
+    {
+      selector: z.string().describe("CSS selector of the input element (e.g., 'input[name=\"email\"]', '#search')"),
+      text: z.string().describe("Text to type into the element"),
+      url: z.string().url().optional().describe("Optional URL to navigate to before typing"),
+      clearFirst: z.boolean().optional().describe("Clear existing text before typing (default: false)"),
+      pressEnter: z.boolean().optional().describe("Press Enter after typing (default: false)"),
+    },
+    async ({ selector, text, url, clearFirst, pressEnter }) => {
+      try {
+        const result = await typeIntoElement(selector, text, {
+          url,
+          clearFirst,
+          pressEnter,
+        });
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Typed "${result.text}" into \`${result.selector}\`. Screenshot after typing:`,
+            },
+            {
+              type: "image" as const,
+              data: result.screenshot,
+              mimeType: "image/png" as const,
+            },
+          ],
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: "text" as const, text: `Type failed: ${message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "select_option",
+    `Select an option from a dropdown (<select>) element by value. Returns a screenshot after selection so you can visually verify the result.`,
+    {
+      selector: z.string().describe("CSS selector of the <select> element (e.g., '#country', 'select[name=\"size\"]')"),
+      value: z.string().describe("Value of the <option> to select"),
+      url: z.string().url().optional().describe("Optional URL to navigate to before selecting"),
+    },
+    async ({ selector, value, url }) => {
+      try {
+        const result = await selectOption(selector, value, { url });
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Selected value "${result.value}". Screenshot after selection:`,
+            },
+            {
+              type: "image" as const,
+              data: result.screenshot,
+              mimeType: "image/png" as const,
+            },
+          ],
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: "text" as const, text: `Select failed: ${message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "scroll",
+    `Scroll the page by a pixel amount or to a specific element. Returns a screenshot after scrolling so you can visually verify the new viewport position.`,
+    {
+      url: z.string().url().optional().describe("Optional URL to navigate to before scrolling"),
+      direction: z.enum(["up", "down"]).optional().describe("Scroll direction (default: 'down')"),
+      amount: z.number().optional().describe("Pixels to scroll (default: 500)"),
+      toSelector: z.string().optional().describe("CSS selector of element to scroll into view (overrides direction/amount)"),
+    },
+    async ({ url, direction, amount, toSelector }) => {
+      try {
+        const result = await scrollPage({ url, direction, amount, toSelector });
+
+        const description = toSelector
+          ? `Scrolled to \`${toSelector}\``
+          : `Scrolled ${direction ?? "down"} by ${amount ?? 500}px`;
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `${description}. Screenshot after scroll:`,
+            },
+            {
+              type: "image" as const,
+              data: result.screenshot,
+              mimeType: "image/png" as const,
+            },
+          ],
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: "text" as const, text: `Scroll failed: ${message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "wait_for",
+    `Wait for an element to appear in the DOM. Returns the element's tag name and text content when found. Use this to wait for dynamic content to load before interacting with it.`,
+    {
+      selector: z.string().describe("CSS selector of the element to wait for"),
+      url: z.string().url().optional().describe("Optional URL to navigate to before waiting"),
+      timeout: z.number().optional().describe("Maximum wait time in ms (default: 10000)"),
+      visible: z.boolean().optional().describe("Wait for element to be visible, not just in DOM (default: false)"),
+    },
+    async ({ selector, url, timeout, visible }) => {
+      try {
+        const result = await waitForElement(selector, { url, timeout, visible });
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: [
+                `Element found: \`${result.selector}\``,
+                `**Tag:** <${result.tagName}>`,
+                `**Text:** ${result.textContent || "(empty)"}`,
+              ].join("\n"),
+            },
+          ],
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: "text" as const, text: `Wait failed: ${message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "get_element",
+    `Get detailed information about a DOM element: tag name, text content, all attributes, bounding box, and computed styles (color, font, background, display, visibility). Returns a screenshot so you can visually identify the element in context.`,
+    {
+      selector: z.string().describe("CSS selector of the element to inspect"),
+      url: z.string().url().optional().describe("Optional URL to navigate to before inspecting"),
+    },
+    async ({ selector, url }) => {
+      try {
+        const info = await getElementInfo(selector, { url });
+
+        const attrLines = Object.entries(info.attributes)
+          .map(([k, v]) => `  ${k}="${v}"`)
+          .join("\n");
+
+        const boxStr = info.boundingBox
+          ? `${info.boundingBox.x}, ${info.boundingBox.y} (${info.boundingBox.width}x${info.boundingBox.height})`
+          : "N/A";
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: [
+                `# Element Info: \`${selector}\``,
+                ``,
+                `**Tag:** <${info.tagName}>`,
+                `**Visible:** ${info.isVisible}`,
+                `**Text:** ${info.textContent || "(empty)"}`,
+                `**Bounding Box:** ${boxStr}`,
+                ``,
+                `## Attributes`,
+                attrLines || "  (none)",
+                ``,
+                `## Computed Styles`,
+                `  color: ${info.computedStyles.color}`,
+                `  background-color: ${info.computedStyles.backgroundColor}`,
+                `  font-size: ${info.computedStyles.fontSize}`,
+                `  font-family: ${info.computedStyles.fontFamily}`,
+                `  font-weight: ${info.computedStyles.fontWeight}`,
+                `  display: ${info.computedStyles.display}`,
+                `  visibility: ${info.computedStyles.visibility}`,
+                ``,
+                `Screenshot:`,
+              ].join("\n"),
+            },
+            {
+              type: "image" as const,
+              data: info.screenshot,
+              mimeType: "image/png" as const,
+            },
+          ],
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: "text" as const, text: `Get element failed: ${message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
   // ── Prompts ────────────────────────────────────────────────────
 
   server.prompt(
@@ -970,6 +1664,22 @@ This tool is FREE — runs entirely within Claude Code.`,
           content: {
             type: "text" as const,
             text: QUICK_DESIGN_PROMPT,
+          },
+        },
+      ],
+    })
+  );
+
+  server.prompt(
+    "semantic-compare",
+    "Semantic visual comparison methodology. Use after running the semantic_compare tool to guide analysis of whether UI changes match the intended design request.",
+    () => ({
+      messages: [
+        {
+          role: "user" as const,
+          content: {
+            type: "text" as const,
+            text: SEMANTIC_COMPARE_PROMPT,
           },
         },
       ],

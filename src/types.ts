@@ -210,6 +210,74 @@ export interface BaselineComparison {
   readonly unchanged: readonly BaselineMetricChange[];
 }
 
+// ── Browser Capture ───────────────────────────────────────────────
+
+export type ConsoleLevel = "log" | "warn" | "error" | "info" | "debug";
+
+export interface ConsoleEntry {
+  readonly level: ConsoleLevel;
+  readonly text: string;
+  readonly timestamp: string;
+  readonly location?: string;
+}
+
+export interface ConsoleCaptureResult {
+  readonly url: string;
+  readonly timestamp: string;
+  readonly entries: readonly ConsoleEntry[];
+  readonly uncaughtExceptions: readonly string[];
+  readonly totalCount: number;
+  readonly countByLevel: Readonly<Record<ConsoleLevel, number>>;
+}
+
+export interface NetworkEntry {
+  readonly url: string;
+  readonly method: string;
+  readonly resourceType: string;
+  readonly status: number;
+  readonly size: number;
+  readonly duration: number;
+  readonly failed: boolean;
+  readonly failureReason?: string;
+}
+
+export interface NetworkTypeSummary {
+  readonly type: string;
+  readonly count: number;
+  readonly totalSize: number;
+}
+
+export interface NetworkSummary {
+  readonly totalRequests: number;
+  readonly failedRequests: number;
+  readonly totalTransferSize: number;
+  readonly byType: readonly NetworkTypeSummary[];
+}
+
+export interface NetworkCaptureResult {
+  readonly url: string;
+  readonly timestamp: string;
+  readonly entries: readonly NetworkEntry[];
+  readonly summary: NetworkSummary;
+}
+
+export type PageErrorKind = "exception" | "unhandled-rejection" | "resource-load-failure";
+
+export interface PageError {
+  readonly kind: PageErrorKind;
+  readonly message: string;
+  readonly timestamp: string;
+  readonly source?: string;
+}
+
+export interface ErrorCaptureResult {
+  readonly url: string;
+  readonly timestamp: string;
+  readonly errors: readonly PageError[];
+  readonly totalCount: number;
+  readonly countByKind: Readonly<Record<PageErrorKind, number>>;
+}
+
 // ── Performance Budgets ───────────────────────────────────────────
 
 export interface PerformanceBudgets {
@@ -239,4 +307,148 @@ export interface BudgetFailure {
 export interface BudgetCheckResult {
   readonly passed: boolean;
   readonly failures: readonly BudgetFailure[];
+}
+
+// ── Lighthouse Deep Analysis ──────────────────────────────────────
+
+export interface PwaCheckItem {
+  readonly id: string;
+  readonly title: string;
+  readonly passed: boolean;
+  readonly description: string;
+}
+
+export interface PwaReadinessResult {
+  readonly installable: boolean;
+  readonly serviceWorker: boolean;
+  readonly https: boolean;
+  readonly manifest: boolean;
+  readonly offlineCapable: boolean;
+  readonly checks: readonly PwaCheckItem[];
+  readonly overallReady: boolean;
+}
+
+export interface SecurityFinding {
+  readonly id: string;
+  readonly title: string;
+  readonly passed: boolean;
+  readonly description: string;
+  readonly severity: "critical" | "high" | "medium" | "low";
+  readonly details: string | null;
+}
+
+export interface SecurityAuditResult {
+  readonly httpsUsed: boolean;
+  readonly findings: readonly SecurityFinding[];
+  readonly vulnerableLibraries: readonly string[];
+  readonly totalPassed: number;
+  readonly totalFailed: number;
+}
+
+export interface UnusedCodeEntry {
+  readonly url: string;
+  readonly totalBytes: number;
+  readonly unusedBytes: number;
+  readonly potentialSavingsBytes: number;
+}
+
+export interface UnusedCodeResult {
+  readonly unusedJavascript: readonly UnusedCodeEntry[];
+  readonly unusedCss: readonly UnusedCodeEntry[];
+  readonly totalPotentialSavingsBytes: number;
+  readonly totalPotentialSavingsKb: number;
+}
+
+export interface LcpOptimizationResult {
+  readonly lcpElement: string | null;
+  readonly lcpTimeMs: number | null;
+  readonly ttfbMs: number | null;
+  readonly resourceLoadTimeMs: number | null;
+  readonly renderDelayMs: number | null;
+  readonly lcpScore: number | null;
+  readonly suggestions: readonly string[];
+}
+
+export interface ResourceEntry {
+  readonly url: string;
+  readonly transferSizeBytes: number;
+  readonly resourceType: string;
+}
+
+export interface ResourceBreakdown {
+  readonly type: string;
+  readonly count: number;
+  readonly totalBytes: number;
+}
+
+export interface ResourceAnalysisResult {
+  readonly totalTransferSizeBytes: number;
+  readonly totalTransferSizeKb: number;
+  readonly totalRequests: number;
+  readonly breakdown: readonly ResourceBreakdown[];
+  readonly largestResources: readonly ResourceEntry[];
+  readonly renderBlockingResources: readonly ResourceEntry[];
+}
+
+// ── Browser Interaction ──────────────────────────────────────────
+
+export interface NavigateResult {
+  readonly url: string;
+  readonly title: string;
+  readonly status: number | null;
+  readonly screenshot: string;
+}
+
+export interface ClickResult {
+  readonly clicked: boolean;
+  readonly selector: string;
+  readonly screenshot: string;
+}
+
+export interface TypeResult {
+  readonly typed: boolean;
+  readonly selector: string;
+  readonly text: string;
+  readonly screenshot: string;
+}
+
+export interface SelectResult {
+  readonly selected: boolean;
+  readonly value: string;
+  readonly screenshot: string;
+}
+
+export interface ScrollResult {
+  readonly scrolled: boolean;
+  readonly screenshot: string;
+}
+
+export interface WaitResult {
+  readonly found: boolean;
+  readonly selector: string;
+  readonly tagName: string;
+  readonly textContent: string;
+}
+
+export interface ElementInfo {
+  readonly tagName: string;
+  readonly textContent: string;
+  readonly attributes: Readonly<Record<string, string>>;
+  readonly boundingBox: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  } | null;
+  readonly computedStyles: {
+    readonly color: string;
+    readonly backgroundColor: string;
+    readonly fontSize: string;
+    readonly fontFamily: string;
+    readonly fontWeight: string;
+    readonly display: string;
+    readonly visibility: string;
+  };
+  readonly isVisible: boolean;
+  readonly screenshot: string;
 }

@@ -6,8 +6,8 @@
   <img src="https://img.shields.io/npm/v/uimax-mcp" alt="npm version" />
   <img src="https://img.shields.io/npm/dm/uimax-mcp" alt="npm downloads" />
   <img src="https://img.shields.io/npm/l/uimax-mcp" alt="license" />
-  <img src="https://img.shields.io/badge/tools-16-blue" alt="16 tools" />
-  <img src="https://img.shields.io/badge/tests-301%20passing-brightgreen" alt="301 tests passing" />
+  <img src="https://img.shields.io/badge/tools-32-blue" alt="32 tools" />
+  <img src="https://img.shields.io/badge/tests-423%20passing-brightgreen" alt="423 tests passing" />
   <img src="https://img.shields.io/badge/coverage-87%25-brightgreen" alt="87% coverage" />
   <img src="https://img.shields.io/badge/cost-free%20(Pro%20plan)-brightgreen" alt="free for Pro plan" />
 </p>
@@ -77,7 +77,7 @@ npm install -g uimax-mcp
 
 ## Tools
 
-The MCP server exposes **16 tools** that Claude uses automatically:
+The MCP server exposes **32 tools** that Claude uses automatically:
 
 ### `review_ui` -- Full Automated Pipeline
 
@@ -194,6 +194,73 @@ Scans frontend source files for **25+ categories** of issues. Uses **AST-based a
 | `direct-dom-access` | `document.querySelector` etc. — proper call expression matching |
 | `console-log` | `console.log/warn/error` — not fooled by variable names containing "console" |
 | `inline-style` | JSX `style={}` attributes — proper attribute detection |
+
+### Deep Lighthouse Tools
+
+Five dedicated tools for granular performance analysis — goes deeper than a single Lighthouse score.
+
+### `pwa_audit`
+Check Progressive Web App readiness: installable, service worker, HTTPS, manifest, offline capability.
+
+### `security_audit`
+Security analysis: HTTPS usage, Content Security Policy, mixed content, vulnerable JavaScript libraries, external links without `noopener`.
+
+### `unused_code`
+Find unused JavaScript and CSS with exact byte savings per resource. Know exactly what to tree-shake.
+
+### `lcp_optimization`
+Deep analysis of your Largest Contentful Paint: what the LCP element is, resource load time, render delay, TTFB, with specific optimization suggestions.
+
+### `resource_analysis`
+Full resource breakdown by type (JS, CSS, images, fonts), total transfer size, request count, top 10 largest resources, and render-blocking resources.
+
+### Browser Interaction Tools
+
+Seven tools for interacting with your running app — click buttons, fill forms, navigate, and verify the results visually.
+
+### `navigate`
+Navigate to a URL, wait for network idle. Returns page info + screenshot.
+
+### `click`
+Click an element by CSS selector. Returns a screenshot after the click so Claude can verify the result.
+
+### `type_text`
+Type text into an input field. Options: `clearFirst` to clear existing value, `pressEnter` to submit. Returns screenshot after.
+
+### `select_option`
+Select a dropdown option by value. Returns screenshot after.
+
+### `scroll`
+Scroll the page by pixel amount (up/down) or to a specific element via CSS selector. Returns screenshot after.
+
+### `wait_for`
+Wait for an element to appear in the DOM. Returns element tag name and text content.
+
+### `get_element`
+Get detailed info about a DOM element: attributes, bounding box, computed styles (color, font, background), visibility.
+
+### Debugging Tools
+
+Three tools for capturing what's happening under the hood during page load.
+
+### `capture_console`
+Capture all console messages (log, warn, error, info, debug) and uncaught exceptions during page load. Returns entries with timestamps and source locations.
+
+### `capture_network`
+Capture all network requests with status codes, sizes, timing, and resource types. Returns per-request details + summary grouped by type (JS, CSS, images, etc.).
+
+### `capture_errors`
+Capture JavaScript exceptions, unhandled promise rejections, and failed resource loads (broken images, missing scripts/stylesheets).
+
+### AI-Powered Review
+
+### `semantic_compare`
+**AI-powered visual comparison.** Captures before/after screenshots, runs pixel-level diff, and returns a structured methodology prompt for Claude to semantically evaluate whether UI changes match the intended design request. Goes beyond pixel diffing to understand *intent*.
+
+```
+Input:  URL before + URL after + description of intended change
+Output: Both screenshots + diff image + pixel diff % + semantic methodology for Claude
+```
 
 ---
 

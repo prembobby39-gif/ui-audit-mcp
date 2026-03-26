@@ -6,12 +6,12 @@
     "url": "https://github.com/prembobby39-gif/uimax-mcp",
     "source": "github"
   },
-  "version": "0.5.0",
+  "version": "0.6.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "uimax-mcp",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "transport": {
         "type": "stdio"
       },
