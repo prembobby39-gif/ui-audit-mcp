@@ -8,3 +8,5 @@ dist/
 coverage/
 *.tgz
 .puppeteer/
+.uimax-history.json
+.mcpregistry_*

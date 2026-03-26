@@ -6,6 +6,12 @@ import {
   detectFramework,
   type FileInfo,
 } from "../utils/file-utils.js";
+import {
+  runAstAnalysis,
+  canParseAsAst,
+  AST_RULE_IDS,
+  type AstFinding,
+} from "../utils/ast-analyzer.js";
 
 // ── Analysis Rules ─────────────────────────────────────────────────
 
@@ -437,6 +443,79 @@ function checkMissingErrorBoundary(files: readonly FileInfo[]): CodeFinding | nu
   return null;
 }
 
+// ── AST / Regex Routing ────────────────────────────────────────────
+
+interface AstCoverageResult {
+  readonly findings: readonly AstFinding[];
+  readonly coveredRuleIds: ReadonlySet<string>;
+}
+
+/**
+ * Attempt AST analysis for the file. Returns AST findings and the set of
+ * rule IDs that were covered by the AST engine. If AST parsing fails,
+ * returns empty results so the caller falls back to regex for all rules.
+ */
+function getAstCoveredRules(
+  file: FileInfo,
+  activeRules: readonly Rule[],
+): AstCoverageResult {
+  if (!canParseAsAst(file.path)) {
+    return { findings: [], coveredRuleIds: new Set() };
+  }
+
+  const activeAstRuleIds = new Set(
+    activeRules
+      .filter((r) => AST_RULE_IDS.has(r.id) && r.fileTypes.includes(file.extension))
+      .map((r) => r.id),
+  );
+
+  if (activeAstRuleIds.size === 0) {
+    return { findings: [], coveredRuleIds: new Set() };
+  }
+
+  const astFindings = runAstAnalysis(file.path, file.content);
+
+  // If AST returned nothing (could be parse failure), still mark rules as covered
+  // so we don't double-report. The AST analyzer returns [] on parse failure too,
+  // but that's acceptable — regex would also likely give poor results on broken syntax.
+  const relevantFindings = astFindings.filter((f) => activeAstRuleIds.has(f.rule));
+
+  return {
+    findings: limitFindingsPerRule(relevantFindings, 5),
+    coveredRuleIds: activeAstRuleIds,
+  };
+}
+
+/**
+ * Return the subset of active rules that should run via regex —
+ * i.e., rules not covered by the AST engine for this file.
+ */
+function getRegexOnlyRules(
+  file: FileInfo,
+  activeRules: readonly Rule[],
+  astResult: AstCoverageResult,
+): readonly Rule[] {
+  return activeRules.filter(
+    (r) => !astResult.coveredRuleIds.has(r.id),
+  );
+}
+
+/**
+ * Limit findings to at most `max` per unique rule ID (immutable).
+ */
+function limitFindingsPerRule(
+  findings: readonly AstFinding[],
+  max: number,
+): readonly AstFinding[] {
+  const counts = new Map<string, number>();
+  return findings.filter((f) => {
+    const current = counts.get(f.rule) ?? 0;
+    if (current >= max) return false;
+    counts.set(f.rule, current + 1);
+    return true;
+  });
+}
+
 // ── Main Analysis ──────────────────────────────────────────────────
 
 /**
@@ -494,8 +573,27 @@ export async function analyzeCode(
       stylesheetCount++;
     }
 
-    // Run pattern-based rules (using filtered activeRules)
-    for (const rule of activeRules) {
+    // Run AST-based analysis for supported file types, then regex for the rest
+    const astCoveredRules = getAstCoveredRules(file, activeRules);
+    const regexOnlyRules = getRegexOnlyRules(file, activeRules, astCoveredRules);
+
+    // Run AST analysis and convert findings
+    for (const astFinding of astCoveredRules.findings) {
+      const effectiveSeverity = config.severity[astFinding.rule] ?? astFinding.severity;
+      findings.push({
+        file: file.relativePath,
+        line: astFinding.line,
+        severity: effectiveSeverity,
+        category: astFinding.category,
+        rule: astFinding.rule,
+        message: astFinding.message,
+        suggestion: astFinding.suggestion,
+        analysisMethod: "ast",
+      });
+    }
+
+    // Run regex-based rules for rules without AST coverage
+    for (const rule of regexOnlyRules) {
       if (!rule.fileTypes.includes(file.extension)) continue;
 
       const matches = file.content.matchAll(rule.pattern);
@@ -520,6 +618,7 @@ export async function analyzeCode(
           rule: rule.id,
           message: rule.message,
           suggestion: rule.suggestion,
+          analysisMethod: "regex",
         });
       }
     }

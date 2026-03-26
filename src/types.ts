@@ -77,6 +77,7 @@ export interface CodeFinding {
   readonly rule: string;
   readonly message: string;
   readonly suggestion: string;
+  readonly analysisMethod?: "ast" | "regex";
 }
 
 export interface CodeAnalysisResult {
@@ -163,4 +164,79 @@ export interface FullReviewResult {
   readonly performance: PerformanceMetrics;
   readonly codeAnalysis: CodeAnalysisResult;
   readonly lighthouse?: LighthouseResultSummary;
+}
+
+// ── Baselines ─────────────────────────────────────────────────────
+
+export interface BaselineData {
+  readonly url: string;
+  readonly timestamp: string;
+  readonly lighthouseScores: {
+    readonly performance: number | null;
+    readonly accessibility: number | null;
+    readonly bestPractices: number | null;
+    readonly seo: number | null;
+  };
+  readonly accessibilityViolationCount: number;
+  readonly performanceMetrics: {
+    readonly fcp: number | null;
+    readonly lcp: number | null;
+    readonly cls: number | null;
+    readonly tbt: number | null;
+  };
+  readonly codeIssueCount: number;
+}
+
+export interface BaselineEntry {
+  readonly url: string;
+  readonly timestamp: string;
+  readonly data: BaselineData;
+}
+
+export interface BaselineMetricChange {
+  readonly metric: string;
+  readonly previous: number | null;
+  readonly current: number | null;
+  readonly delta: number | null;
+  readonly direction: "improved" | "regressed" | "unchanged" | "unknown";
+}
+
+export interface BaselineComparison {
+  readonly url: string;
+  readonly previousTimestamp: string;
+  readonly currentTimestamp: string;
+  readonly improvements: readonly BaselineMetricChange[];
+  readonly regressions: readonly BaselineMetricChange[];
+  readonly unchanged: readonly BaselineMetricChange[];
+}
+
+// ── Performance Budgets ───────────────────────────────────────────
+
+export interface PerformanceBudgets {
+  readonly lighthouse?: {
+    readonly performance?: number;
+    readonly accessibility?: number;
+    readonly bestPractices?: number;
+    readonly seo?: number;
+  };
+  readonly webVitals?: {
+    readonly fcp?: number;
+    readonly lcp?: number;
+    readonly cls?: number;
+    readonly tbt?: number;
+  };
+  readonly maxAccessibilityViolations?: number;
+  readonly maxCodeIssues?: number;
+}
+
+export interface BudgetFailure {
+  readonly metric: string;
+  readonly threshold: number;
+  readonly actual: number;
+  readonly message: string;
+}
+
+export interface BudgetCheckResult {
+  readonly passed: boolean;
+  readonly failures: readonly BudgetFailure[];
 }

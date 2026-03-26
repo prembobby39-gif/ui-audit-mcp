@@ -6,8 +6,8 @@
   <img src="https://img.shields.io/npm/v/uimax-mcp" alt="npm version" />
   <img src="https://img.shields.io/npm/dm/uimax-mcp" alt="npm downloads" />
   <img src="https://img.shields.io/npm/l/uimax-mcp" alt="license" />
-  <img src="https://img.shields.io/badge/tools-13-blue" alt="13 tools" />
-  <img src="https://img.shields.io/badge/tests-214%20passing-brightgreen" alt="214 tests passing" />
+  <img src="https://img.shields.io/badge/tools-16-blue" alt="16 tools" />
+  <img src="https://img.shields.io/badge/tests-301%20passing-brightgreen" alt="301 tests passing" />
   <img src="https://img.shields.io/badge/coverage-87%25-brightgreen" alt="87% coverage" />
   <img src="https://img.shields.io/badge/cost-free%20(Pro%20plan)-brightgreen" alt="free for Pro plan" />
 </p>
@@ -77,7 +77,7 @@ npm install -g uimax-mcp
 
 ## Tools
 
-The MCP server exposes **13 tools** that Claude uses automatically:
+The MCP server exposes **16 tools** that Claude uses automatically:
 
 ### `review_ui` -- Full Automated Pipeline
 
@@ -157,8 +157,43 @@ Input:  Starting URL + maxPages (optional, default 5) + code directory (optional
 Output: Per-page screenshots + accessibility issues + performance metrics + overall summary
 ```
 
+### `save_baseline`
+Save the current audit state for a URL as a baseline snapshot. Runs accessibility, performance, and Lighthouse audits, then appends the results to `.uimax-history.json` in your project directory. Use this before making changes so you can compare later.
+
+```
+Input:  URL + optional code directory
+Output: Baseline entry saved to .uimax-history.json
+```
+
+### `compare_to_baseline`
+Compare the current audit state of a URL against its most recent saved baseline. Runs fresh audits, loads the previous baseline, and shows what improved and what regressed. Automatically saves the new results as the latest baseline.
+
+```
+Input:  URL + optional code directory
+Output: Improvements, regressions, and unchanged metrics
+```
+
+### `check_budgets`
+Check if the current site meets performance budgets defined in `.uimaxrc.json`. Runs fresh audits and compares against budget thresholds for Lighthouse scores, Web Vitals, accessibility violations, and code issues. Returns pass/fail with details of any exceeded budgets.
+
+```
+Input:  URL + optional code directory (for .uimaxrc.json)
+Output: Pass/fail status + details of any budget violations
+```
+
 ### `analyze_code`
-Scans frontend source files for **25+ categories** of issues. Supports custom configuration via `.uimaxrc.json` (see [Configuration](#configuration)).
+Scans frontend source files for **25+ categories** of issues. Uses **AST-based analysis** (TypeScript compiler API) for `.ts/.tsx/.js/.jsx` files — catches bugs that regex misses, with zero false positives on string literals. Falls back to regex for other file types and rules without AST implementations. Supports custom configuration via `.uimaxrc.json` (see [Configuration](#configuration)).
+
+**AST-powered rules** (zero false positives):
+| Rule | What AST catches that regex misses |
+|------|-----------------------------------|
+| `react-hooks-conditional` | Hooks inside nested if/for/while/ternary — proper scope traversal |
+| `missing-key-prop` | `.map()` callbacks returning JSX without `key` — handles arrow/block bodies |
+| `empty-catch` | Empty catch blocks — not fooled by comments |
+| `any-type` | `any` in type positions only — ignores "any" in strings/comments |
+| `direct-dom-access` | `document.querySelector` etc. — proper call expression matching |
+| `console-log` | `console.log/warn/error` — not fooled by variable names containing "console" |
+| `inline-style` | JSX `style={}` attributes — proper attribute detection |
 
 ---
 
@@ -189,6 +224,34 @@ Create a `.uimaxrc.json` in your project root to customize code analysis:
 - **`rules`** — Set any rule to `"off"`, `"warn"`, or `"error"`
 - **`severity`** — Override severity: `"low"`, `"medium"`, `"high"`, `"critical"`
 - **`ignore`** — Additional glob patterns to exclude from analysis
+- **`budgets`** — Performance budgets for the `check_budgets` tool (see below)
+
+### Performance Budgets
+
+Add a `budgets` key to `.uimaxrc.json` to define thresholds:
+
+```json
+{
+  "budgets": {
+    "lighthouse": {
+      "performance": 90,
+      "accessibility": 95,
+      "bestPractices": 90,
+      "seo": 90
+    },
+    "webVitals": {
+      "fcp": 1800,
+      "lcp": 2500,
+      "cls": 0.1,
+      "tbt": 300
+    },
+    "maxAccessibilityViolations": 0,
+    "maxCodeIssues": 10
+  }
+}
+```
+
+Run `check_budgets` to verify your site meets these thresholds.
 
 UIMax searches for `.uimaxrc.json` in the target directory and up to 3 parent directories, so it works in monorepos.
 
@@ -415,7 +478,7 @@ Contributions welcome! Some ideas:
 - [ ] Design token extraction
 - [ ] Framework-specific checks (Vue composition API, Svelte stores)
 - [x] Visual regression with pixel-level diffing
-- [ ] Performance budgets (fail if bundle > X KB)
+- [x] Performance budgets (fail if scores drop below thresholds)
 - [ ] Custom rule plugins (user-defined regex rules)
 - [ ] Figma design comparison (screenshot vs Figma mock)
 

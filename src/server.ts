@@ -13,19 +13,77 @@ import { generateHtmlReport } from "./tools/html-report.js";
 import { checkDarkMode } from "./tools/dark-mode.js";
 import { compareScreenshots } from "./tools/compare.js";
 import { crawlAndReview, formatCrawlReport } from "./tools/crawl.js";
+import {
+  saveBaseline,
+  loadBaseline,
+  compareToBaseline,
+  formatBaselineComparison,
+} from "./tools/baselines.js";
+import {
+  checkBudgets,
+  loadBudgetsFromConfig,
+  formatBudgetReport,
+} from "./tools/budgets.js";
 import { closeBrowser } from "./utils/browser.js";
+import type { BaselineData } from "./types.js";
 import {
   UI_REVIEW_PROMPT,
   RESPONSIVE_REVIEW_PROMPT,
   QUICK_DESIGN_PROMPT,
 } from "./prompts/review.js";
 
+// ── Baseline Data Collection ───────────────────────────────────────
+
+/**
+ * Run audits and extract a BaselineData snapshot for the given URL.
+ * Used by save_baseline, compare_to_baseline, and check_budgets tools.
+ */
+async function collectBaselineData(url: string): Promise<BaselineData> {
+  const [accessibility, performance, lighthouseResult] = await Promise.all([
+    runAccessibilityAudit(url),
+    measurePerformance(url),
+    runLighthouseSafe(url),
+  ]);
+
+  return {
+    url,
+    timestamp: new Date().toISOString(),
+    lighthouseScores: {
+      performance: lighthouseResult?.scores.performance ?? null,
+      accessibility: lighthouseResult?.scores.accessibility ?? null,
+      bestPractices: lighthouseResult?.scores.bestPractices ?? null,
+      seo: lighthouseResult?.scores.seo ?? null,
+    },
+    accessibilityViolationCount: accessibility.violations.length,
+    performanceMetrics: {
+      fcp: performance.firstContentfulPaint,
+      lcp: performance.largestContentfulPaint,
+      cls: performance.cumulativeLayoutShift,
+      tbt: performance.totalBlockingTime,
+    },
+    codeIssueCount: 0,
+  };
+}
+
+/**
+ * Attempt to run Lighthouse, returning null on any failure.
+ */
+async function runLighthouseSafe(
+  url: string
+): Promise<Awaited<ReturnType<typeof runLighthouse>> | null> {
+  try {
+    return await runLighthouse(url);
+  } catch {
+    return null;
+  }
+}
+
 // ── Server Creation ────────────────────────────────────────────────
 
 export function createServer(): McpServer {
   const server = new McpServer({
     name: "uimax",
-    version: "0.4.0",
+    version: "0.5.0",
     // 0.2.0: Dark mode detection, 25+ code rules, framework detection fix
   });
 
@@ -682,6 +740,186 @@ This tool is FREE — runs entirely within Claude Code.`,
         const message = error instanceof Error ? error.message : String(error);
         return {
           content: [{ type: "text" as const, text: `Crawl and review failed: ${message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // ── Baseline & Budget Tools ──────────────────────────────────
+
+  server.tool(
+    "save_baseline",
+    `Save the current audit state for a URL as a baseline snapshot. Runs screenshot, accessibility, performance, and Lighthouse audits, then saves the results to .uimax-history.json in the project directory. Use this to establish a baseline before making changes, so you can compare later.
+
+This tool is FREE — runs entirely within Claude Code.`,
+    {
+      url: z.string().url().describe("URL of the running application (e.g., http://localhost:3000)"),
+      codeDir: z.string().optional().describe("Project directory for saving .uimax-history.json (defaults to cwd)"),
+    },
+    async ({ url, codeDir }) => {
+      try {
+        const auditResults = await collectBaselineData(url);
+        const entry = await saveBaseline(url, auditResults, codeDir);
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: [
+                `# Baseline Saved`,
+                ``,
+                `**URL:** ${url}`,
+                `**Timestamp:** ${entry.timestamp}`,
+                `**Lighthouse Performance:** ${auditResults.lighthouseScores.performance ?? "N/A"}`,
+                `**Lighthouse Accessibility:** ${auditResults.lighthouseScores.accessibility ?? "N/A"}`,
+                `**Accessibility Violations:** ${auditResults.accessibilityViolationCount}`,
+                `**FCP:** ${auditResults.performanceMetrics.fcp ?? "N/A"}ms`,
+                `**LCP:** ${auditResults.performanceMetrics.lcp ?? "N/A"}ms`,
+                `**CLS:** ${auditResults.performanceMetrics.cls ?? "N/A"}`,
+                `**TBT:** ${auditResults.performanceMetrics.tbt ?? "N/A"}ms`,
+                ``,
+                `Baseline saved to .uimax-history.json. Use \`compare_to_baseline\` after making changes to see what improved or regressed.`,
+              ].join("\n"),
+            },
+          ],
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: "text" as const, text: `Save baseline failed: ${message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "compare_to_baseline",
+    `Compare the current audit state of a URL against its most recent saved baseline. Runs fresh audits, loads the previous baseline from .uimax-history.json, and shows what improved and what regressed. Use this after making changes to verify you improved the metrics you intended.
+
+This tool is FREE — runs entirely within Claude Code.`,
+    {
+      url: z.string().url().describe("URL of the running application (e.g., http://localhost:3000)"),
+      codeDir: z.string().optional().describe("Project directory containing .uimax-history.json (defaults to cwd)"),
+    },
+    async ({ url, codeDir }) => {
+      try {
+        const previousEntry = await loadBaseline(url, codeDir);
+        if (!previousEntry) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `No baseline found for ${url}. Run \`save_baseline\` first to establish a baseline.`,
+              },
+            ],
+          };
+        }
+
+        const currentData = await collectBaselineData(url);
+        const comparison = compareToBaseline(currentData, previousEntry.data);
+        const report = formatBaselineComparison(comparison);
+
+        // Also save the new baseline
+        await saveBaseline(url, currentData, codeDir);
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: [
+                `# Baseline Comparison Results`,
+                ``,
+                report,
+                ``,
+                `---`,
+                ``,
+                `The current results have been saved as the new baseline.`,
+              ].join("\n"),
+            },
+          ],
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: "text" as const, text: `Baseline comparison failed: ${message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "check_budgets",
+    `Check if the current site meets performance budgets defined in .uimaxrc.json. Runs fresh audits and compares results against budget thresholds for Lighthouse scores, Web Vitals, accessibility violations, and code issues. Returns pass/fail with details of any exceeded budgets.
+
+Configure budgets in .uimaxrc.json under the "budgets" key:
+{
+  "budgets": {
+    "lighthouse": { "performance": 90, "accessibility": 95 },
+    "webVitals": { "lcp": 2500, "cls": 0.1 },
+    "maxAccessibilityViolations": 0
+  }
+}
+
+This tool is FREE — runs entirely within Claude Code.`,
+    {
+      url: z.string().url().describe("URL of the running application (e.g., http://localhost:3000)"),
+      codeDir: z.string().optional().describe("Project directory containing .uimaxrc.json with budget config (defaults to cwd)"),
+    },
+    async ({ url, codeDir }) => {
+      try {
+        const budgets = await loadBudgetsFromConfig(codeDir);
+        if (!budgets) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: [
+                  `# No Performance Budgets Configured`,
+                  ``,
+                  `No \`budgets\` key found in .uimaxrc.json. Add budgets to your config:`,
+                  ``,
+                  '```json',
+                  `{`,
+                  `  "budgets": {`,
+                  `    "lighthouse": { "performance": 90, "accessibility": 95 },`,
+                  `    "webVitals": { "lcp": 2500, "cls": 0.1, "fcp": 1800, "tbt": 300 },`,
+                  `    "maxAccessibilityViolations": 0,`,
+                  `    "maxCodeIssues": 10`,
+                  `  }`,
+                  `}`,
+                  '```',
+                ].join("\n"),
+              },
+            ],
+          };
+        }
+
+        const currentData = await collectBaselineData(url);
+        const result = checkBudgets(currentData, budgets);
+        const report = formatBudgetReport(result);
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: [
+                `# Budget Check Results`,
+                ``,
+                `**URL:** ${url}`,
+                `**Timestamp:** ${currentData.timestamp}`,
+                ``,
+                report,
+              ].join("\n"),
+            },
+          ],
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: "text" as const, text: `Budget check failed: ${message}` }],
           isError: true,
         };
       }
