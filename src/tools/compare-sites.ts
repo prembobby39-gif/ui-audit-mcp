@@ -331,7 +331,13 @@ export function formatSiteComparisonReport(result: SiteComparisonResult): string
 function shortenUrl(url: string): string {
   try {
     const parsed = new URL(url);
-    return parsed.hostname.replace(/^www\./, "");
+    const host = parsed.hostname.replace(/^www\./, "");
+    // Include path if it's not just "/" to differentiate same-domain URLs
+    const path = parsed.pathname;
+    if (path && path !== "/") {
+      return host + path.replace(/\/$/, "");
+    }
+    return host;
   } catch {
     return url.slice(0, 30);
   }
